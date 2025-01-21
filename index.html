@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#2d3e50">
+    <title>Route Tracker</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+    <style>
+        /* Previous styles remain the same */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
+
+        #map {
+            height: 100%;
+            width: 100%;
+            z-index: 1;
+        }
+
+        .header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(45, 62, 80, 0.95);
+            color: white;
+            padding: 12px 16px;
+            font-size: 18px;
+            font-weight: 600;
+            z-index: 1000;
+        }
+
+        .info-card {
+            position: absolute;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 92%;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 1000;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            max-width: 400px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-item i {
+            width: 24px;
+            color: #3498db;
+            margin-right: 12px;
+        }
+
+        .bottom-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-around;
+            z-index: 1000;
+        }
+
+        .action-button {
+            background: none;
+            border: none;
+            padding: 8px 12px;
+            color: #2d3e50;
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .action-button i {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">Route Tracker: Denmark → Kurdistan</div>
+    
+    <div id="map"></div>
+    
+    <div class="info-card" id="info">
+        <div class="info-item">
+            <i class="fas fa-location-arrow"></i>
+            <span>Finding location...</span>
+        </div>
+        <div class="info-item">
+            <i class="fas fa-map-marker-alt"></i>
+            <span>Next stop: Calculating...</span>
+        </div>
+        <div class="info-item">
+            <i class="fas fa-road"></i>
+            <span>Distance remaining: --</span>
+        </div>
+    </div>
+
+    <div class="bottom-bar">
+        <button class="action-button" onclick="centerOnUser()">
+            <i class="fas fa-crosshairs"></i>
+            <span>Me</span>
+        </button>
+        <button class="action-button" onclick="showFullRoute()">
+            <i class="fas fa-route"></i>
+            <span>Route</span>
+        </button>
+        <button class="action-button" onclick="toggleMapStyle()">
+            <i class="fas fa-layer-group"></i>
+            <span>Map</span>
+        </button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <script>
+        // Initialize variables
+        let userMarker = null;
+        let userCircle = null;
+        let map = null;
+        let standardMap = null;
+        let satelliteMap = null;
+        let route = null;
+        let isStandardMap = true;
+
+        // Location data
+        const locations = {
+            "Sønderborg": {
+                coords: [54.9083, 9.7926],
+                notes: "Start"
+            },
+            "Berlin": {
+                coords: [52.5200, 13.4050],
+                notes: "Major stop"
+            },
+            "Prague": {
+                coords: [50.0755, 14.4378],
+                notes: "Rest stop"
+            },
+            "Vienna": {
+                coords: [48.2082, 16.3738],
+                notes: "Checkpoint"
+            },
+            "Budapest": {
+                coords: [47.4979, 19.0402],
+                notes: "Major stop"
+            },
+            "Belgrade": {
+                coords: [44.8176, 20.4569],
+                notes: "Rest stop"
+            },
+            "Sofia": {
+                coords: [42.6977, 23.3219],
+                notes: "Checkpoint"
+            },
+            "Ankara": {
+                coords: [39.9208, 32.8541],
+                notes: "Major stop"
+            },
+            "Kurdistan": {
+                coords: [36.1907, 43.9930],
+                notes: "Destination"
+            }
+        };
+
+        // Initialize map and markers
+        function initializeMap() {
+            // Create map
+            map = L.map('map', {
+                zoomControl: false,
+                attributionControl: false
+            }).setView([48.5, 17.0], 5);
+
+            // Create tile layers
+            standardMap = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+            satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+            
+            standardMap.addTo(map);
+
+            // Create route
+            const routeCoords = Object.values(locations).map(loc => loc.coords);
+            route = L.polyline(routeCoords, {
+                color: '#3498db',
+                weight: 5,
+                opacity: 0.8
+            }).addTo(map);
+
+            // Add markers for locations
+            Object.entries(locations).forEach(([name, data]) => {
+                L.marker(data.coords)
+                    .bindPopup(`<div class="custom-popup"><h3>${name}</h3><p>${data.notes}</p></div>`)
+                    .addTo(map);
+            });
+        }
+
+        // Calculate distance between two points
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            try {
+                if (!lat1 || !lon1 || !lat2 || !lon2) return 0;
+                
+                const R = 6371; // Earth's radius in km
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = 
+                    Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            } catch (error) {
+                console.error('Error calculating distance:', error);
+                return 0;
+            }
+        }
+
+        // Find nearest location
+        function findNearestLocation(lat, lon) {
+            try {
+                let nearest = {
+                    name: 'Unknown',
+                    distance: 0
+                };
+
+                if (!lat || !lon) return nearest;
+
+                let minDistance = Infinity;
+                
+                Object.entries(locations).forEach(([name, data]) => {
+                    const distance = calculateDistance(lat, lon, data.coords[0], data.coords[1]);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        nearest = {
+                            name: name,
+                            distance: distance
+                        };
+                    }
+                });
+
+                return nearest;
+
+            } catch (error) {
+                console.error('Error finding nearest location:', error);
+                return {
+                    name: 'Error',
+                    distance: 0
+                };
+            }
+        }
+
+        // Update info display
+        function updateInfo(nearest) {
+            try {
+                const distance = nearest.distance || 0;
+                const name = nearest.name || 'Unknown';
+                
+                document.getElementById('info').innerHTML = `
+                    <div class="info-item">
+                        <i class="fas fa-location-arrow"></i>
+                        <span>Location active</span>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <span>Near: ${name}</span>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-road"></i>
+                        <span>${Math.round(distance)} km to next stop</span>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error updating info:', error);
+                document.getElementById('info').innerHTML = `
+                    <div class="info-item">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Error updating location info</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Update user position
+        function updatePosition(position) {
+            try {
+                const { latitude: lat, longitude: lon } = position.coords;
+
+                // Remove existing markers
+                if (userMarker) map.removeLayer(userMarker);
+                if (userCircle) map.removeLayer(userCircle);
+
+                // Add user marker
+                userMarker = L.marker([lat, lon], {
+                    icon: L.divIcon({
+                        className: 'user-marker',
+                        html: '<i class="fas fa-circle" style="color:#2ecc71;font-size:12px"></i>',
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6]
+                    })
+                }).addTo(map);
+
+                // Add accuracy circle
+                userCircle = L.circle([lat, lon], {
+                    radius: position.coords.accuracy,
+                    color: '#2ecc71',
+                    fillColor: '#2ecc71',
+                    fillOpacity: 0.1
+                }).addTo(map);
+
+                // Update info with nearest location
+                const nearest = findNearestLocation(lat, lon);
+                updateInfo(nearest);
+
+            } catch (error) {
+                console.error('Error updating position:', error);
+                updateInfo({name: 'Error updating position', distance: 0});
+            }
+        }
+
+        // Start tracking location
+        function startTracking() {
+            if (!navigator.geolocation) {
+                updateInfo({name: 'Location not available', distance: 0});
+                return;
+            }
+
+            navigator.geolocation.watchPosition(
+                updatePosition,
+                (error) => {
+                    console.error('Geolocation error:', error);
+                    updateInfo({name: 'Location error', distance: 0});
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                }
+            );
+        }
+
+        // UI Control functions
+        function centerOnUser() {
+            if (userMarker) {
+                map.setView(userMarker.getLatLng(), 14);
+            }
+        }
+
+        function showFullRoute() {
+            if (route) {
+                map.fitBounds(route.getBounds(), { padding: [30, 30] });
+            }
+        }
+
+        function toggleMapStyle() {
+            if (isStandardMap) {
+                map.removeLayer(standardMap);
+                satelliteMap.addTo(map);
+            } else {
+                map.removeLayer(satelliteMap);
+                standardMap.addTo(map);
+            }
+            isStandardMap = !isStandardMap;
+        }
+
+        // Initialize and start
+        initializeMap();
+        startTracking();
+    </script>
+</body>
+</html>
